@@ -135,8 +135,6 @@
     </MASM>
     <MASM Include="przeciwna.asm" />
     <MASM Include="przestaw.asm" />
-    <MASM Include="suma64a.asm" />
-    <MASM Include="szukaj64a.asm" />
     <MASM Include="szukaj_max.asm" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
