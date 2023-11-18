@@ -14,6 +14,9 @@ dziesiec dd 10
 
 dekoder db '0123456789ABCDEF'
 
+w1 dd 0
+w0 dd 0
+
 .code
 
 wczytaj_do_eax PROC
@@ -186,43 +189,156 @@ nie_jest_zero:
     ret
 wyswietl_eax_hex ENDP
 
-COMMENT @
-; ECX : EDX : EAX / 10
+wyswietl_eax_low_hex PROC
+    pushad
+    sub esp, 12
+    mov edi, esp
+
+    mov ecx, 8
+    mov esi, 1
+ptl:
+    rol eax, 4
+    mov ebx, eax
+    and ebx, 0Fh
+    mov dl, [dekoder + ebx]
+    mov [edi + esi], dl
+    inc esi
+    loop ptl
+
+    mov byte ptr [edi], 0
+    mov byte ptr [edi + 9], 0ah
+    push dword ptr 10
+    push edi
+    push dword ptr 1
+    call __write
+    add esp, 12 + 12
+    popad
+    ret
+wyswietl_eax_low_hex ENDP
+
+wyswietl_edx_high_hex PROC
+    pushad
+    sub esp, 12
+    mov edi, esp
+
+    mov ecx, 8
+    mov esi, 1
+ptl:
+    rol edx, 4
+    mov ebx, edx
+    and ebx, 0Fh
+    mov al, [dekoder + ebx]
+    mov [edi + esi], al
+    inc esi
+    loop ptl
+
+    mov esi, 1
+ptl2:
+    cmp byte ptr [edi + esi], 30h
+    jne nie_jest_zero
+    mov byte ptr [edi + esi], 20h
+    inc esi
+    jmp ptl2
+
+nie_jest_zero:
+    mov byte ptr [edi], 0ah
+    mov byte ptr [edi + 9], 0
+
+    push dword ptr 10
+    push edi
+    push dword ptr 1
+    call __write
+    add esp, 12 + 12
+    popad
+    ret
+wyswietl_edx_high_hex ENDP
+
+wyswietl_64 PROC
+    pushad
+    sub esp, 24
+    mov edi, esp
+    mov w1, edx
+    mov w0, eax
+
+    mov esi, 22
+konwersja:
+    mov edx, 0
+
+    mov eax, w1
+    div dziesiec
+    mov w1, eax
+
+    mov eax, w0
+    div dziesiec
+    mov w0, eax
+
+    add dl, 30h
+    mov [edi + esi], dl
+    dec esi
+
+    or eax, w1
+    jne konwersja
+
+wypelnienie:
+    mov byte ptr [edi], 0ah
+    mov byte ptr [edi + 23], 0ah
+
+    push 24
+    push edi
+    push 1
+    call __write
+    add esp, 36
+    popad
+    ret
+wyswietl_64 ENDP
+
+wczytaj_64 PROC
+; TODO
+wczytaj_64 ENDP
+
+; ECX : EDX : EAX
 wyswietl_96 PROC
     pushad
     sub esp, 44
     mov edi, esp
     
-    mov [edi + 32], ecx
+    mov [edi + 32], eax
     mov [edi + 36], edx
-    mov [edi + 40], eax
+    mov [edi + 40], ecx
 
     mov ebx, 10
-    mov esi, 10
-    mov eax, ecx
+    mov esi, 29
 
-    ; to jest chyba zle, bo przesuwam w prawo liczbe w ECX
-    ; a to pierwsza reszta z dzielenia powinna chyba byc doklejona do EDX
-    ; w nastepnym etapie
+konwersja:
     xor edx, edx
+    mov eax, [edi + 40]
     div ebx
-    test eax, eax
-    jz druga
-    add dl, 30h
-    mov [edi + esi], dl
-    dec esi
-    
-druga:
-    mov esi, 20
+    mov [edi + 40], eax
     mov eax, [edi + 36]
     div ebx
-    add dl, 30h
-    mov [edi + esi], dl
+    mov [edi + 36], eax
+    mov eax, [edi + 32]
+    div ebx
+    mov [edi + 32], eax
+    add dl, '0'
+    mov byte ptr [edi + esi], dl
     dec esi
+    or eax, [edi + 36]
+    or eax, [edi + 40]
+    jnz konwersja
 
-    mov [edi], 0ah
-    mov [edi + 3], 0ah
-    push dword ptr 4
+    test esi, 0ffffffffh
+    jz koniec
+
+wypelnienie:
+    mov byte ptr [edi + esi], 0
+    dec esi
+    jnz wypelnienie
+
+koniec:
+    mov byte ptr [edi], 0ah
+    mov byte ptr [edi + 30], 0ah
+    push dword ptr 31
     push edi
     push dword ptr 1
     call __write
@@ -230,7 +346,77 @@ druga:
     popad
     ret
 wyswietl_96 ENDP
-@
+
+wczytaj_96 PROC
+    pushfd
+    push esi
+    push edi
+    push ebx
+    sub esp, 44
+    mov esi, esp
+
+    push 32
+    push esi
+    push 0
+    call __read
+    add esp, 12
+
+    mov dword ptr [esi + 32], 0
+    mov dword ptr [esi + 36], 0
+    mov dword ptr [esi + 40], 0
+
+    xor edi, edi
+    xor ebx, ebx
+    xor eax, eax
+
+pobieraj_znaki:
+    mov bl, byte ptr [esi + edi]
+    inc edi
+    cmp bl, 0ah
+    je byl_enter
+    cmp bl, '0'
+    jb blad
+    cmp bl, '9'
+    ja blad
+    and bl, 0fh
+    movzx ebx, bl
+
+    mov eax, [esi + 40]
+    mul dword ptr dziesiec
+    mov [esi + 40], eax
+    mov eax, [esi + 36]
+    mul dword ptr dziesiec
+    add [esi + 40], edx
+    mov [esi + 36], eax
+    mov eax, [esi + 32]
+    mul dword ptr dziesiec
+    add [esi + 36], edx
+    mov [esi + 32], eax
+    add [esi + 32], ebx
+    jmp pobieraj_znaki
+
+byl_enter:
+    mov eax, [esi + 32]
+    mov edx, [esi + 36]
+    mov ecx, [esi + 40]
+    add esp, 44
+    pop ebx
+    pop edi
+    pop esi
+    popfd
+    ret
+
+blad:
+    add esp, 44
+    pop ebx
+    pop edi
+    pop esi
+    popfd
+    xor eax, eax
+    xor edx, edx
+    xor ecx, ecx
+    ret
+wczytaj_96 ENDP
 
 ; nie dziala dla -2^32
 ; 1000 0000 0000 0000 0000 0000 0000 0000 not
@@ -346,10 +532,9 @@ koniec_koniec:
 wczytaj_eax_u2_b13 ENDP
 
 _main PROC
-    call wczytaj_eax_u2_b13
-    sub eax, 10
-    call wyswietl_eax_u2_b13
-
+    call wczytaj_96
+    call wyswietl_96
+ 
     push DWORD PTR 0
     call _ExitProcess@4
 _main ENDP
